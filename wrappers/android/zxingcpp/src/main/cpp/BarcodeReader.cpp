@@ -155,18 +155,22 @@ jstring Read(JNIEnv *env, ImageView image, jstring formats, jboolean tryHarder, 
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_zxingcpp_BarcodeReader_readYBuffer(
-	JNIEnv *env, jobject thiz, jobject yBuffer, jint rowStride,
+	JNIEnv *env, jobject thiz, jbyteArray yBuffer, jint rowStride,
 	jint left, jint top, jint width, jint height, jint rotation,
 	jstring formats, jboolean tryHarder, jboolean tryRotate, jboolean tryInvert, jboolean tryDownscale,
 	jobject result)
 {
-	const uint8_t* pixels = static_cast<uint8_t *>(env->GetDirectBufferAddress(yBuffer));
-
+	int len = env->GetArrayLength(yBuffer);
+	jbyte* bytes = env->GetByteArrayElements(yBuffer, nullptr);
+    uint8_t* pixels = (uint8_t*) malloc(len);
+    memcpy(pixels, bytes, len);
 	auto image =
 		ImageView{pixels + top * rowStride + left, width, height, ImageFormat::Lum, rowStride}
 			.rotated(rotation);
 
-	return Read(env, image, formats, tryHarder, tryRotate, tryInvert, tryDownscale, result);
+	jstring text = Read(env, image, formats, tryHarder, tryInvert, tryRotate, tryDownscale, result);
+	free(pixels);
+	return text;
 }
 
 struct LockedPixels

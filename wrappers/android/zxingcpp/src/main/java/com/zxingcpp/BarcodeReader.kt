@@ -21,8 +21,6 @@ import android.graphics.ImageFormat
 import android.graphics.Point
 import android.graphics.Rect
 import androidx.camera.core.ImageProxy
-import java.lang.RuntimeException
-import java.nio.ByteBuffer
 
 class BarcodeReader {
 
@@ -74,8 +72,12 @@ class BarcodeReader {
 
         var result = Result()
         val status = image.use {
+            val y = it.planes[0].buffer
+            val yBuffer = ByteArray(y.limit())
+            y.position(y.limit()).flip()
+            y.get(yBuffer)
             readYBuffer(
-                it.planes[0].buffer,
+                yBuffer,
                 it.planes[0].rowStride,
                 it.cropRect.left,
                 it.cropRect.top,
@@ -118,7 +120,7 @@ class BarcodeReader {
 
     // setting the format enum from inside the JNI code is a hassle -> use returned String instead
     private external fun readYBuffer(
-        yBuffer: ByteBuffer, rowStride: Int, left: Int, top: Int, width: Int, height: Int, rotation: Int,
+        yBuffer: ByteArray, rowStride: Int, left: Int, top: Int, width: Int, height: Int, rotation: Int,
         formats: String, tryHarder: Boolean, tryRotate: Boolean, tryInvert: Boolean, tryDownscale: Boolean,
         result: Result,
     ): String?
