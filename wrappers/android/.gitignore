@@ -1,10 +1,22 @@
-*.iml
+# Gradle files
 .gradle
-/local.properties
-.idea
-.DS_Store
-/build
-/captures
+.gradle/
+build/
+
+# Android Studio
+.idea/
+/**/build/
+/**/local.properties
+/**/out
+/**/production
+captures/
+.navigation/
 .externalNativeBuild
+*.ipr
+*~
+*.swp
+*.iml
+
+.DS_Store
 .cxx
-local.properties
+

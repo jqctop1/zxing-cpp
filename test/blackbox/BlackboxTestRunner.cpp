@@ -6,14 +6,10 @@
 
 #include "BlackboxTestRunner.h"
 
-#include "DecoderResult.h"
 #include "ImageLoader.h"
 #include "ReadBarcode.h"
-#include "ThresholdBinarizer.h"
 #include "Utf.h"
 #include "ZXAlgorithms.h"
-#include "pdf417/PDFReader.h"
-#include "qrcode/QRReader.h"
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
@@ -61,39 +57,39 @@ namespace {
 	};
 }
 
-// Helper for `compareResult()` - map `key` to Result property, converting value to std::string
-static std::string getResultValue(const Result& result, const std::string& key)
+// Helper for `compareResult()` - map `key` to Barcode property, converting value to std::string
+static std::string getBarcodeValue(const Barcode& barcode, const std::string& key)
 {
 	if (key == "contentType")
-		return ToString(result.contentType());
+		return ToString(barcode.contentType());
 	if (key == "ecLevel")
-		return result.ecLevel();
+		return barcode.ecLevel();
 	if (key == "orientation")
-		return std::to_string(result.orientation());
+		return std::to_string(barcode.orientation());
 	if (key == "symbologyIdentifier")
-		return result.symbologyIdentifier();
+		return barcode.symbologyIdentifier();
 	if (key == "sequenceSize")
-		return std::to_string(result.sequenceSize());
+		return std::to_string(barcode.sequenceSize());
 	if (key == "sequenceIndex")
-		return std::to_string(result.sequenceIndex());
+		return std::to_string(barcode.sequenceIndex());
 	if (key == "sequenceId")
-		return result.sequenceId();
+		return barcode.sequenceId();
 	if (key == "isLastInSequence")
-		return result.isLastInSequence() ? "true" : "false";
+		return barcode.isLastInSequence() ? "true" : "false";
 	if (key == "isPartOfSequence")
-		return result.isPartOfSequence() ? "true" : "false";
+		return barcode.isPartOfSequence() ? "true" : "false";
 	if (key == "isMirrored")
-		return result.isMirrored() ? "true" : "false";
+		return barcode.isMirrored() ? "true" : "false";
 	if (key == "isInverted")
-		return result.isInverted() ? "true" : "false";
+		return barcode.isInverted() ? "true" : "false";
 	if (key == "readerInit")
-		return result.readerInit() ? "true" : "false";
+		return barcode.readerInit() ? "true" : "false";
 
 	return fmt::format("***Unknown key '{}'***", key);
 }
 
 // Read ".result.txt" file contents `expected` with lines "key=value" and compare to `actual`
-static bool compareResult(const Result& result, const std::string& expected, std::string& actual)
+static bool compareResult(const Barcode& barcode, const std::string& expected, std::string& actual)
 {
 	bool ret = true;
 
@@ -112,7 +108,7 @@ static bool compareResult(const Result& result, const std::string& expected, std
 		}
 		std::string key = expectedLine.substr(0, equals);
 		std::string expectedValue = expectedLine.substr(equals + 1);
-		std::string actualValue = getResultValue(result, key);
+		std::string actualValue = getBarcodeValue(barcode, key);
 		if (actualValue != expectedValue) {
 			ret = false;
 			actualValue += " ***Mismatch***";
@@ -122,9 +118,9 @@ static bool compareResult(const Result& result, const std::string& expected, std
 	return ret;
 }
 
-static std::string checkResult(const fs::path& imgPath, std::string_view expectedFormat, const Result& result)
+static std::string checkResult(const fs::path& imgPath, std::string_view expectedFormat, const Barcode& barcode)
 {
-	if (auto format = ToString(result.format()); expectedFormat != format)
+	if (auto format = ToString(barcode.format()); expectedFormat != format)
 		return fmt::format("Format mismatch: expected '{}' but got '{}'", expectedFormat, format);
 
 	auto readFile = [imgPath](const char* ending) {
@@ -134,20 +130,20 @@ static std::string checkResult(const fs::path& imgPath, std::string_view expecte
 
 	if (auto expected = readFile(".result.txt")) {
 		std::string actual;
-		if (!compareResult(result, *expected, actual))
+		if (!compareResult(barcode, *expected, actual))
 			return fmt::format("Result mismatch: expected\n{} but got\n{}", *expected, actual);
 	}
 
 	if (auto expected = readFile(".txt")) {
 		expected = EscapeNonGraphical(*expected);
-		auto utf8Result = result.text(TextMode::Escaped);
+		auto utf8Result = barcode.text(TextMode::Escaped);
 		return utf8Result != *expected ? fmt::format("Content mismatch: expected '{}' but got '{}'", *expected, utf8Result) : "";
 	}
 
 	if (auto expected = readFile(".bin")) {
 		ByteArray binaryExpected(*expected);
-		return result.bytes() != binaryExpected
-				   ? fmt::format("Content mismatch: expected '{}' but got '{}'", ToHex(binaryExpected), ToHex(result.bytes()))
+		return barcode.bytes() != binaryExpected
+				   ? fmt::format("Content mismatch: expected '{}' but got '{}'", ToHex(binaryExpected), ToHex(barcode.bytes()))
 				   : "";
 	}
 
@@ -216,7 +212,7 @@ static std::vector<fs::path> getImagesInDirectory(const fs::path& directory)
 }
 
 static void doRunTests(const fs::path& directory, std::string_view format, int totalTests, const std::vector<TestCase>& tests,
-					   DecodeHints hints)
+					   ReaderOptions opts)
 {
 	auto imgPaths = getImagesInDirectory(directory);
 	auto folderName = directory.stem();
@@ -232,17 +228,19 @@ static void doRunTests(const fs::path& directory, std::string_view format, int t
 			if (tc.name.empty())
 				break;
 			auto startTime = std::chrono::steady_clock::now();
-			hints.setTryDownscale(false);
-			hints.setTryHarder(tc.name == "slow");
-			hints.setTryRotate(tc.name == "slow");
-			hints.setTryInvert(tc.name == "slow");
-			hints.setIsPure(tc.name == "pure");
-			if (hints.isPure())
-				hints.setBinarizer(Binarizer::FixedThreshold);
+			opts.setTryDownscale(tc.name == "slow_");
+			opts.setDownscaleFactor(2);
+			opts.setDownscaleThreshold(180);
+			opts.setTryHarder(tc.name == "slow");
+			opts.setTryRotate(tc.name == "slow");
+			opts.setTryInvert(tc.name == "slow");
+			opts.setIsPure(tc.name == "pure");
+			if (opts.isPure())
+				opts.setBinarizer(Binarizer::FixedThreshold);
 			for (const auto& imgPath : imgPaths) {
-				auto result = ReadBarcode(ImageLoader::load(imgPath).rotated(test.rotation), hints);
-				if (result.isValid()) {
-					auto error = checkResult(imgPath, format, result);
+				auto barcode = ReadBarcode(ImageLoader::load(imgPath).rotated(test.rotation), opts);
+				if (barcode.isValid()) {
+					auto error = checkResult(imgPath, format, barcode);
 					if (!error.empty())
 						tc.misReadFiles[imgPath] = error;
 				} else {
@@ -259,16 +257,16 @@ static void doRunTests(const fs::path& directory, std::string_view format, int t
 	}
 }
 
-static Result readMultiple(const std::vector<fs::path>& imgPaths, std::string_view format)
+static Barcode readMultiple(const std::vector<fs::path>& imgPaths, std::string_view format)
 {
-	Results allResults;
+	Barcodes allBarcodes;
 	for (const auto& imgPath : imgPaths) {
-		auto results = ReadBarcodes(ImageLoader::load(imgPath),
-									DecodeHints().setFormats(BarcodeFormatFromString(format)).setTryDownscale(false));
-		allResults.insert(allResults.end(), results.begin(), results.end());
+		auto barcodes = ReadBarcodes(ImageLoader::load(imgPath),
+									 ReaderOptions().setFormats(BarcodeFormatFromString(format)).setTryDownscale(false));
+		allBarcodes.insert(allBarcodes.end(), barcodes.begin(), barcodes.end());
 	}
 
-	return MergeStructuredAppendSequence(allResults);
+	return MergeStructuredAppendSequence(allBarcodes);
 }
 
 static void doRunStructuredAppendTest(const fs::path& directory, std::string_view format, int totalTests,
@@ -294,9 +292,9 @@ static void doRunStructuredAppendTest(const fs::path& directory, std::string_vie
 		auto startTime = std::chrono::steady_clock::now();
 
 		for (const auto& [testPath, testImgPaths] : imageGroups) {
-			auto result = readMultiple(testImgPaths, format);
-			if (result.isValid()) {
-				auto error = checkResult(testPath, format, result);
+			auto barcode = readMultiple(testImgPaths, format);
+			if (barcode.isValid()) {
+				auto error = checkResult(testPath, format, barcode);
 				if (!error.empty())
 					tc.misReadFiles[testPath] = error;
 			} else {
@@ -320,9 +318,9 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 	};
 
 	auto runTests = [&](std::string_view directory, std::string_view format, int total,
-						const std::vector<TestCase>& tests, const DecodeHints& hints = DecodeHints()) {
+						const std::vector<TestCase>& tests, const ReaderOptions& opts = ReaderOptions()) {
 		if (hasTest(directory))
-			doRunTests(testPathPrefix / directory, format, total, tests, hints);
+			doRunTests(testPathPrefix / directory, format, total, tests, opts);
 	};
 
 	auto runStructuredAppendTest = [&](std::string_view directory, std::string_view format, int total,
@@ -336,12 +334,16 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 		auto startTime = std::chrono::steady_clock::now();
 
 		// clang-format off
-		runTests("aztec-1", "Aztec", 26, {
-			{ 25, 26, 0   },
-			{ 25, 26, 90  },
-			{ 25, 26, 180 },
-			{ 25, 26, 270 },
-			{ 24, 0, pure },
+
+		// Expected failures:
+		// abc-inverted.png (fast) - fast does not try inverted
+		// az-thick.png (pure)
+		runTests("aztec-1", "Aztec", 31, {
+			{ 30, 31, 0   },
+			{ 30, 31, 90  },
+			{ 30, 31, 180 },
+			{ 30, 31, 270 },
+			{ 29, 0, pure },
 		});
 
 		runTests("aztec-2", "Aztec", 22, {
@@ -351,12 +353,12 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 			{ 21, 21, 270 },
 		});
 
-		runTests("datamatrix-1", "DataMatrix", 27, {
-			{ 26, 27, 0   },
-			{  0, 26, 90  },
-			{  0, 26, 180 },
-			{  0, 26, 270 },
-			{ 26, 0, pure },
+		runTests("datamatrix-1", "DataMatrix", 29, {
+			{ 29, 29, 0   },
+			{  0, 27, 90  },
+			{  0, 27, 180 },
+			{  0, 27, 270 },
+			{ 28, 0, pure },
 		});
 
 		runTests("datamatrix-2", "DataMatrix", 13, {
@@ -366,11 +368,11 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 			{  0, 13, 270 },
 		});
 
-		runTests("datamatrix-3", "DataMatrix", 20, {
-			{ 19, 20, 0   },
-			{  0, 20, 90  },
-			{  0, 20, 180 },
-			{  0, 20, 270 },
+		runTests("datamatrix-3", "DataMatrix", 21, {
+			{ 20, 21, 0   },
+			{  0, 21, 90  },
+			{  0, 21, 180 },
+			{  0, 21, 270 },
 		});
 
 		runTests("datamatrix-4", "DataMatrix", 21, {
@@ -379,6 +381,11 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 			{  0, 21, 180 },
 			{  0, 21, 270 },
 			{ 19, 0, pure },
+		});
+
+		runTests("dxfilmedge-1", "DXFilmEdge", 3, {
+			{ 1, 3, 0 },
+			{ 0, 3, 180 },
 		});
 
 		runTests("codabar-1", "Codabar", 11, {
@@ -399,7 +406,7 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 		runTests("code39-2", "Code39", 2, {
 			{ 2, 2, 0   },
 			{ 2, 2, 180 },
-		}, DecodeHints().setTryCode39ExtendedMode(true));
+		});
 
 		runTests("code39-3", "Code39", 12, {
 			{ 12, 12, 0   },
@@ -416,9 +423,9 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 			{ 6, 6, 180 },
 		});
 
-		runTests("code128-2", "Code128", 21, {
-			{ 18, 21, 0   },
-			{ 19, 21, 180 },
+		runTests("code128-2", "Code128", 22, {
+			{ 19, 22, 0   },
+			{ 20, 22, 180 },
 		});
 
 		runTests("code128-3", "Code128", 2, {
@@ -426,15 +433,15 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 			{ 2, 2, 180 },
 		});
 
-		runTests("ean8-1", "EAN-8", 8, {
-			{ 8, 8, 0   },
-			{ 8, 8, 180 },
-			{ 7, 0, pure },
+		runTests("ean8-1", "EAN-8", 9, {
+			{ 9, 9, 0   },
+			{ 9, 9, 180 },
+			{ 8, 0, pure },
 		});
 
-		runTests("ean13-1", "EAN-13", 31, {
-			{ 24, 29, 0   },
-			{ 23, 29, 180 },
+		runTests("ean13-1", "EAN-13", 32, {
+			{ 26, 30, 0   },
+			{ 25, 30, 180 },
 		});
 
 		runTests("ean13-2", "EAN-13", 24, {
@@ -449,17 +456,17 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 
 		runTests("ean13-4", "EAN-13", 22, {
 			{ 6, 13, 0   },
-			{ 8, 13, 180 },
+			{ 7, 13, 180 },
 		});
 
 		runTests("ean13-extension-1", "EAN-13", 5, {
 			{ 3, 5, 0 },
 			{ 3, 5, 180 },
-		}, DecodeHints().setEanAddOnSymbol(EanAddOnSymbol::Require));
+		}, ReaderOptions().setEanAddOnSymbol(EanAddOnSymbol::Require));
 
-		runTests("itf-1", "ITF", 11, {
-			{ 10, 11, 0   },
-			{ 10, 11, 180 },
+		runTests("itf-1", "ITF", 14, {
+			{ 13, 14, 0   },
+			{ 13, 14, 180 },
 		});
 
 		runTests("itf-2", "ITF", 6, {
@@ -476,34 +483,34 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 		});
 
 		runTests("upca-1", "UPC-A", 12, {
-			{  9, 12, 0   },
+			{ 10, 12, 0   },
 			{ 11, 12, 180 },
 		});
 
 		runTests("upca-2", "UPC-A", 36, {
 			{ 17, 22, 0   },
-			{ 16, 22, 180 },
+			{ 17, 22, 180 },
 		});
 
 		runTests("upca-3", "UPC-A", 21, {
-			{ 7, 10, 0   },
-			{ 8, 10, 180 },
+			{ 7, 11, 0   },
+			{ 8, 11, 180 },
 		});
 
 		runTests("upca-4", "UPC-A", 19, {
-			{ 8, 12, 0   },
-			{ 9, 12, 180 },
+			{ 8, 12, 0, 1, 0 },
+			{ 9, 12, 0, 1, 180 },
 		});
 
 		runTests("upca-5", "UPC-A", 32, {
-			{ 17, 20, 0   },
+			{ 18, 20, 0   },
 			{ 18, 20, 180 },
 		});
 
 		runTests("upca-extension-1", "UPC-A", 6, {
 			{ 4, 4, 0 },
 			{ 3, 4, 180 },
-		}, DecodeHints().setEanAddOnSymbol(EanAddOnSymbol::Require));
+		}, ReaderOptions().setEanAddOnSymbol(EanAddOnSymbol::Require));
 
 		runTests("upce-1", "UPC-E", 3, {
 			{ 3, 3, 0   },
@@ -512,8 +519,8 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 		});
 
 		runTests("upce-2", "UPC-E", 28, {
-			{ 17, 22, 0, 1, 0   },
-			{ 20, 22, 1, 1, 180 },
+			{ 18, 22, 0, 1, 0   },
+			{ 19, 22, 1, 1, 180 },
 		});
 
 		runTests("upce-3", "UPC-E", 11, {
@@ -526,9 +533,9 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 			{ 6, 6, 180 },
 		});
 
-		runTests("rss14-2", "DataBar", 16, {
-			{ 8, 10, 0   },
-			{ 9, 10, 180 },
+		runTests("rss14-2", "DataBar", 14, {
+			{ 10, 11, 0   },
+			{ 10, 11, 180 },
 		});
 
 		runTests("rssexpanded-1", "DataBarExpanded", 34, {
@@ -549,14 +556,20 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 		});
 
 		runTests("rssexpandedstacked-1", "DataBarExpanded", 65, {
-			{ 60, 65, 0   },
-			{ 60, 65, 180 },
+			{ 55, 65, 0   },
+			{ 55, 65, 180 },
 			{ 60, 0, pure },
 		});
 
 		runTests("rssexpandedstacked-2", "DataBarExpanded", 2, {
 			{ 2, 2, 0   },
 			{ 2, 2, 180 },
+		});
+
+		runTests("databarltd-1", "DataBarLimited", 2, {
+			{ 2, 2, 0   },
+			{ 2, 2, 180 },
+			{ 2, 0, pure },
 		});
 
 		runTests("qrcode-1", "QRCode", 16, {
@@ -566,26 +579,26 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 			{ 16, 16, 270 },
 		});
 
-		runTests("qrcode-2", "QRCode", 48, {
-			{ 44, 46, 0   },
-			{ 44, 46, 90  },
-			{ 44, 46, 180 },
-			{ 44, 45, 270 },
-			{ 21, 1, pure }, // the misread is the 'outer' symbol in 16.png
+		runTests("qrcode-2", "QRCode", 51, {
+			{ 45, 48, 0   },
+			{ 45, 48, 90  },
+			{ 45, 48, 180 },
+			{ 45, 48, 270 },
+			{ 22, 1, pure }, // the misread is the 'outer' symbol in 16.png
 		});
 
 		runTests("qrcode-3", "QRCode", 28, {
-			{ 25, 25, 0   },
-			{ 25, 25, 90  },
-			{ 25, 25, 180 },
-			{ 24, 24, 270 },
+			{ 28, 28, 0   },
+			{ 28, 28, 90  },
+			{ 28, 28, 180 },
+			{ 28, 28, 270 },
 		});
 
 		runTests("qrcode-4", "QRCode", 41, {
-			{ 29, 29, 0   },
-			{ 29, 29, 90  },
-			{ 29, 29, 180 },
-			{ 29, 29, 270 },
+			{ 31, 31, 0   },
+			{ 31, 31, 90  },
+			{ 31, 31, 180 },
+			{ 31, 31, 270 },
 		});
 
 		runTests("qrcode-5", "QRCode", 16, {
@@ -609,10 +622,18 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 
 		runTests("microqrcode-1", "MicroQRCode", 16, {
 			{ 15, 15, 0   },
-			{ 15, 15, 90  },
-			{ 15, 15, 180 },
-			{ 14, 14, 270 },
+			{ 14, 14, 90  },
+			{ 14, 14, 180 }, // ughs: 1 result is platform/compiler dependent (e.g. -march=core2 vs. haswell)
+			{ 15, 15, 270 },
 			{ 9, 0, pure },
+		});
+
+		runTests("rmqrcode-1", "rMQRCode", 3, {
+			{  2,  3, 0   },
+			{  2,  3, 90  },
+			{  2,  3, 180 },
+			{  2,  3, 270 },
+			{  2,  2, pure },
 		});
 
 		runTests("pdf417-1", "PDF417", 17, {
@@ -620,7 +641,7 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 			{  1, 17, 90  },
 			{ 16, 17, 180 },
 			{  1, 17, 270 },
-			{ 17, 0, pure },
+			{ 16, 0, pure },
 		});
 
 		runTests("pdf417-2", "PDF417", 25, {
@@ -642,7 +663,7 @@ int runBlackBoxTests(const fs::path& testPathPrefix, const std::set<std::string>
 			{ 3, 3, 0   },
 		});
 
-		runTests("falsepositives-1", "None", 26, {
+		runTests("falsepositives-1", "None", 27, {
 			{ 0, 0, 0, 0, 0   },
 			{ 0, 0, 0, 0, 90  },
 			{ 0, 0, 0, 0, 180 },

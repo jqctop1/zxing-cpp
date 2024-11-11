@@ -13,7 +13,7 @@
         android:layout_height="match_parent"
         app:scaleType="fitCenter" />
 
-    <com.example.zxingcppdemo.PreviewOverlay
+    <zxingcpp.app.PreviewOverlay
         android:id="@+id/overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
@@ -58,7 +58,7 @@
         android:background="@drawable/ic_shutter"
         android:contentDescription="@string/capture_button_alt"
         android:scaleType="fitCenter"
-        android:visibility="invisible"
+        android:visibility="visible"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toRightOf="parent" />
@@ -103,9 +103,19 @@
             android:text="tryDownscale" />
 
         <com.google.android.material.chip.Chip
+            android:id="@+id/multiSymbol"
+            style="@style/ChipR"
+            android:text="multiSymbol" />
+
+        <com.google.android.material.chip.Chip
             android:id="@+id/crop"
             style="@style/ChipR"
             android:text="crop" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/torch"
+            style="@style/ChipR"
+            android:text="Torch" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/pause"
