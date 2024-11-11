@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.graphics.ImageFormat
 import android.graphics.Point
 import android.graphics.Rect
+import android.media.Image
 import android.os.Build
 import androidx.camera.core.ImageProxy
 import java.nio.ByteBuffer
@@ -125,6 +126,17 @@ public class BarcodeReader(public var options: Options = Options()) {
 		)
 	}
 
+	public fun read(image: Image): List<Result> {
+		return readYBuffer(image.planes[0].buffer,
+			image.planes[0].rowStride,
+			image.cropRect.left,
+			image.cropRect.top,
+			image.cropRect.width(),
+			image.cropRect.height(),
+			0,
+			options)
+	}
+
 	public fun read(
 		bitmap: Bitmap, cropRect: Rect = Rect(), rotation: Int = 0
 	): List<Result> {
@@ -135,10 +147,6 @@ public class BarcodeReader(public var options: Options = Options()) {
 
 	private external fun readYBuffer(
 		yBuffer: ByteBuffer, rowStride: Int, left: Int, top: Int, width: Int, height: Int, rotation: Int, options: Options
-	): List<Result>
-
-	private external fun readYBuffer(
-		yBuffer: ByteArray, rowStride: Int, left: Int, top: Int, width: Int, height: Int, rotation: Int, options: Options
 	): List<Result>
 
 	private external fun readBitmap(

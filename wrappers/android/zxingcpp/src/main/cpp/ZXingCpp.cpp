@@ -332,25 +332,6 @@ Java_zxingcpp_BarcodeReader_readYBuffer(
 	return Read(env, thiz, image, CreateReaderOptions(env, options));
 }
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_zxingcpp_BarcodeReader_readYBuffer(
-	JNIEnv *env, jobject thiz, jbyteArray yBuffer, jint rowStride,
-	jint left, jint top, jint width, jint height, jint rotation, jobject options)
-{
-	int len = env->GetArrayLength(yBuffer);
-	jbyte* bytes = env->GetByteArrayElements(yBuffer, nullptr);
-    uint8_t* pixels = (uint8_t*) malloc(len);
-    memcpy(pixels, bytes, len);
-	auto image =
-		ImageView{pixels + top * rowStride + left, width, height, ImageFormat::Lum, rowStride}
-			.rotated(rotation);
-
-	jstring text = Read(env, image, CreateReaderOptions(env, options));
-	free(pixels);
-	return text;
-}
-
-
 struct LockedPixels
 {
 	JNIEnv* env;
